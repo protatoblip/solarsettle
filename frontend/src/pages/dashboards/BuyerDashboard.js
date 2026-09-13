@@ -1,5 +1,8 @@
 import React, { useEffect } from 'react';
+import { useWeb3 } from '../../context/Web3Context';
 import './BuyerDashboard.css';
+import { CONTRACT_CHAIN_ID } from '../../config';
+import { fetchPublicMarketData, setDeployedChainId } from '../../lib/contractReads';
 
 /**
  * SolarSettle Buyer Dashboard
@@ -677,6 +680,32 @@ const PROVIDERS =
   PROVIDER_SEEDS.map(
     generateProvider
   );
+
+function applyLiveListings(listings) {
+  if (!listings?.length) return false;
+
+  const liveProviders = listings.map((listing, index) => {
+    const base = PROVIDERS[index % PROVIDERS.length];
+    const seller = listing.seller;
+    return {
+      ...base,
+      id: `onchain-listing-${listing.id}`,
+      name: `On-chain prosumer #${listing.id}`,
+      locality: `Wallet ${seller.slice(0, 6)}...${seller.slice(-4)}`,
+      availableEnergyKwh: listing.kWh,
+      committedEnergyKwh: 0,
+      price: Number(listing.priceDisplay),
+      listingId: listing.id,
+      seller,
+      onChainListing: true,
+      transactions: [],
+    };
+  });
+
+  PROVIDERS.splice(0, PROVIDERS.length, ...liveProviders);
+  state.selectedProviderId = liveProviders[0].id;
+  return true;
+}
 
 /* =========================================================
    BUYER-SIDE STATE + REALISTIC ORDER MODEL
@@ -5321,6 +5350,7 @@ function showPurchaseReview(
         const networkCharge = 0;
         const order = {
           providerId: provider.id, providerName: provider.name, quantityKwh: amount,
+          listingId: provider.listingId,
           unitPrice: provider.price, energyCost, serviceFee, networkCharge,
           total: energyCost + serviceFee + networkCharge,
           supplyPreference: state.purchaseSupply, settlementMethod: state.purchaseSettlement,
@@ -5328,7 +5358,7 @@ function showPurchaseReview(
         };
         Promise.resolve(window.SolarSettleBridge?.purchaseEnergy?.(order))
           .then(result => {
-            const tx = { id: `SS-ORD-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`, providerId: provider.id, date:new Date(), energy:amount, price:provider.price, energyCost:round(energyCost,2), serviceFee:round(serviceFee,2), networkCharge:0, total:round(order.total,2), status: result ? "Submitted" : "Recorded", settlement:state.purchaseSettlement === "wallet" ? "Wallet" : "Account", supply:state.purchaseSupply };
+            const tx = { id: result.txHash || `SS-ORD-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`, providerId: provider.id, date:new Date(), energy:amount, price:provider.price, energyCost:round(energyCost,2), serviceFee:round(serviceFee,2), networkCharge:0, total:round(order.total,2), status:"Submitted", settlement:state.purchaseSettlement === "wallet" ? "Wallet" : "Account", supply:state.purchaseSupply };
             buyerTransactions().unshift(tx);
             provider.availableEnergyKwh = round(Math.max(0, provider.availableEnergyKwh - amount), 1);
             provider.committedEnergyKwh = round((provider.committedEnergyKwh || 0) + amount, 1);
@@ -5538,6 +5568,46 @@ function initialize() {
 
 // React mounts the dashboard through the adapter below.
 
+function BuyerNetworkBar() {
+  const { account, connectWallet, connecting, error, supportedChains, targetChainId, selectNetwork } = useWeb3();
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, padding: '10px 24px', borderBottom: '1px solid var(--ss-border)', background: 'var(--ss-surface)', color: 'var(--ss-muted)', fontSize: 12 }}>
+      <span>{error || (account ? `Connected: ${account.slice(0, 6)}...${account.slice(-4)}` : 'Connect MetaMask for blockchain actions')}</span>
+      <select value={targetChainId} onChange={(event) => selectNetwork(Number(event.target.value))} aria-label="Blockchain network">
+        {supportedChains.map((network) => (
+          <option key={network.chainId} value={network.chainId} disabled={!network.address || network.address === '0x0000000000000000000000000000000000000000'}>
+            {network.label}{network.address && network.address !== '0x0000000000000000000000000000000000000000' ? '' : ' (not deployed)'}
+          </option>
+        ))}
+      </select>
+      {!account && <button type="button" className="ss-button primary" onClick={() => connectWallet(targetChainId)} disabled={connecting}>{connecting ? 'Connecting...' : 'Connect MetaMask'}</button>}
+    </div>
+  );
+}
+
+function BuyerBlockchainBridge({ children }) {
+  const { contract, connectWallet, account } = useWeb3();
+
+  useEffect(() => {
+    window.SolarSettleBridge = {
+      purchaseEnergy: async (order) => {
+        const wallet = contract ? { contract } : await connectWallet();
+        if (!wallet?.contract) throw new Error('Connect MetaMask before purchasing energy.');
+        if (order.listingId === undefined || order.listingId === null) throw new Error('This provider has no live on-chain listing.');
+        const listing = await wallet.contract.listings(order.listingId);
+        if (!listing.active) throw new Error('This on-chain listing is no longer active. Refresh the marketplace.');
+        const total = BigInt(listing.kWh) * BigInt(listing.pricePerUnit);
+        const tx = await wallet.contract.buyEnergy(order.listingId, { value: total });
+        const receipt = await tx.wait();
+        return { txHash: receipt.hash || receipt.transactionHash, account };
+      },
+    };
+    return () => { delete window.SolarSettleBridge; };
+  }, [account, connectWallet, contract]);
+
+  return children;
+}
+
 /* =========================================================
    OPTIONAL EXPORTS
 ========================================================= */
@@ -5558,13 +5628,19 @@ export {
 
 export default function BuyerDashboard() {
   useEffect(() => {
+    setDeployedChainId(CONTRACT_CHAIN_ID);
     initialize();
+    let mounted = true;
+    fetchPublicMarketData().then((market) => {
+      if (mounted && applyLiveListings(market?.listings)) render();
+    }).catch(() => {});
     return () => {
+      mounted = false;
       destroyCharts();
       const root = document.getElementById(APP_ROOT_ID);
       if (root) root.innerHTML = '';
     };
   }, []);
 
-  return <div id={APP_ROOT_ID} />;
+  return <BuyerBlockchainBridge><BuyerNetworkBar /><div id={APP_ROOT_ID} /></BuyerBlockchainBridge>;
 }

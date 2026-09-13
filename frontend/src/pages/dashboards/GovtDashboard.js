@@ -125,6 +125,7 @@ export default function GovtDashboard() {
   const [mapZoomed, setMapZoomed] = useState(false);
   const [loadingLiveData, setLoadingLiveData] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [ownerAddress, setOwnerAddress] = useState(null);
 
   const toggleDarkMode = () => {
     setDarkMode((enabled) => {
@@ -140,6 +141,7 @@ export default function GovtDashboard() {
 
   const load = useCallback(async () => {
     if (!contract) {
+      setOwnerAddress(null);
       setStats({ totalKwh: 19820, totalListings: 17, activeListings: 6, registeredCount: 12 });
       setPendingList(DEMO_PENDING);
       setProsumers(DEMO_PROSUMERS);
@@ -149,6 +151,7 @@ export default function GovtDashboard() {
     setDemoMode(false);
     setLoadingLiveData(true);
     try {
+      setOwnerAddress(await contract.owner());
       const s = await contract.platformStats();
       setStats({
         totalKwh: Number(s[0]),
@@ -236,6 +239,7 @@ export default function GovtDashboard() {
   };
 
   const short = (a) => a ? (a.slice(0, 6) + '...' + a.slice(-4)) : '';
+  const isOwner = !!account && !!ownerAddress && account.toLowerCase() === ownerAddress.toLowerCase();
   const displayProsumers = useMemo(() => [...demoRows, ...prosumers], [demoRows, prosumers]);
   const filteredProsumers = useMemo(() => selectedState ? displayProsumers.filter((row) => stateForLocation(row.location) === selectedState) : displayProsumers, [displayProsumers, selectedState]);
   const filteredPending = useMemo(() => selectedState ? pendingList.filter((row) => stateForLocation(row.location) === selectedState) : pendingList, [pendingList, selectedState]);
@@ -285,6 +289,10 @@ export default function GovtDashboard() {
         </div>
         <h2>🏛️ Government Dashboard</h2>
         <p className="dashboard-sub">Role: Government. {isWalletConnected ? ('Connected: ' + short(account)) : 'Presentation preview with sample registry data.'}</p>
+
+        {isWalletConnected && ownerAddress && !isOwner && (
+          <div className="demo-banner"><strong>Read-only government view</strong><span>This wallet is not the contract owner. Connect the owner wallet {short(ownerAddress)} to approve registrations or apply penalties.</span></div>
+        )}
 
         {demoMode && <div className="demo-banner"><strong>Demo presentation mode</strong><span>Sample registry values are shown for review. Connect MetaMask to switch to live contract data.</span></div>}
 
@@ -374,7 +382,7 @@ export default function GovtDashboard() {
         <h3 className="section-label" style={{ marginTop: 30 }}>📝 Registration approvals</h3>
         {!contract ? <p className="dashboard-sub">Connect a wallet to view approvals.</p> : filteredPending.length === 0 ? <p className="dashboard-sub">No pending registrations in this scope.</p> : (
           <div className="table-wrap"><table className="data-table"><thead><tr><th>Wallet</th><th>Subsidy ID</th><th>Location</th><th>Capacity</th><th></th></tr></thead><tbody>
-            {filteredPending.map((r) => (<tr key={r.address}><td className="mono">{short(r.address)}</td><td className="mono">{r.subsidyID}</td><td>{r.location}</td><td>{r.capacityKw} kW</td><td><button className="buy-btn" style={{ width: 'auto', margin: 0 }} onClick={() => handleApprove(r.address)} disabled={pending}>{demoMode ? 'Approve sample' : pending ? 'Confirming...' : 'Approve'}</button></td></tr>))}
+            {filteredPending.map((r) => (<tr key={r.address}><td className="mono">{short(r.address)}</td><td className="mono">{r.subsidyID}</td><td>{r.location}</td><td>{r.capacityKw} kW</td><td><button className="buy-btn" style={{ width: 'auto', margin: 0 }} onClick={() => handleApprove(r.address)} disabled={pending || (!demoMode && !isOwner)}>{demoMode ? 'Approve sample' : pending ? 'Confirming...' : isOwner ? 'Approve' : 'Owner only'}</button></td></tr>))}
           </tbody></table></div>
         )}
 
@@ -382,7 +390,7 @@ export default function GovtDashboard() {
         {filteredProsumers.length === 0 ? <p className="dashboard-sub">No approved prosumers in this scope.</p> : (
           <div className="table-wrap"><table className="data-table"><thead><tr><th>Wallet</th><th>Subsidy ID</th><th>Location</th><th>Capacity</th><th>Trust</th><th>Generated</th><th>Last Reading</th><th>Risk Signal</th><th>Status</th><th></th></tr></thead><tbody>
             {filteredProsumers.map((p) => (
-              <tr id={`prosumer-${p.address}`} key={p.address} className={p.atRisk ? 'risk-row' : ''}><td className="mono">{short(p.address)} {p.isDemo && <span className="demo-tag">Demo</span>}</td><td className="mono">{p.subsidyID}</td><td>{p.location}</td><td>{p.capacityKw} kW</td><td><strong>{p.trustScore}/100</strong></td><td>{p.generated} kWh</td><td>{p.lastReading} {p.daysSilent > INACTIVITY_WINDOW_DAYS ? '(' + p.daysSilent + 'd silent)' : ''}</td><td>{p.riskReason || getRiskReason(p)}</td><td><span className={'status-pill ' + (p.atRisk ? 'alert' : 'active')}>{p.atRisk ? 'Fraud Risk' : 'Healthy'}</span></td><td>{p.atRisk && (p.isDemo ? <button className="nav-btn" style={{ color: 'var(--accent-alert)' }} onClick={() => handleDemoPenalty(p.address)}>Sim Penalty</button> : <button className="nav-btn" style={{ color: 'var(--accent-alert)' }} onClick={() => handleCheckInactivity(p.address)} disabled={pending}>{demoMode ? 'Apply sample penalty' : 'Apply Penalty'}</button>)}</td></tr>
+              <tr id={`prosumer-${p.address}`} key={p.address} className={p.atRisk ? 'risk-row' : ''}><td className="mono">{short(p.address)} {p.isDemo && <span className="demo-tag">Demo</span>}</td><td className="mono">{p.subsidyID}</td><td>{p.location}</td><td>{p.capacityKw} kW</td><td><strong>{p.trustScore}/100</strong></td><td>{p.generated} kWh</td><td>{p.lastReading} {p.daysSilent > INACTIVITY_WINDOW_DAYS ? '(' + p.daysSilent + 'd silent)' : ''}</td><td>{p.riskReason || getRiskReason(p)}</td><td><span className={'status-pill ' + (p.atRisk ? 'alert' : 'active')}>{p.atRisk ? 'Fraud Risk' : 'Healthy'}</span></td><td>{p.atRisk && (p.isDemo ? <button className="nav-btn" style={{ color: 'var(--accent-alert)' }} onClick={() => handleDemoPenalty(p.address)}>Sim Penalty</button> : <button className="nav-btn" style={{ color: 'var(--accent-alert)' }} onClick={() => handleCheckInactivity(p.address)} disabled={pending || !isOwner}>{demoMode ? 'Apply sample penalty' : isOwner ? 'Apply Penalty' : 'Owner only'}</button>)}</td></tr>
             ))}
           </tbody></table></div>
         )}
