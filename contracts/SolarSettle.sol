@@ -9,7 +9,7 @@ contract SolarSettle {
     // ------------------------------------------------------------------
     // Parameters
     // ------------------------------------------------------------------
-    address public owner;
+    bool public paused;
 
     uint256 public constant INITIAL_TRUST_SCORE = 70;
     uint256 public constant TRUST_SCORE_STEP = 2;
@@ -50,12 +50,23 @@ contract SolarSettle {
     bool private _locked;
 
     // ------------------------------------------------------------------
+    // Trusted-reader registry (demo preserves self-submission, production
+    // gates readings to the owner / a registered panel's authorized reader).
+    // ------------------------------------------------------------------
+    /// @notice Anyone may submit a reading on behalf of an unregistered
+    ///         prosumer's own wallet (demo self-submission). Once a reader is
+    ///         registered for a prosumer, only that reader (or the owner) may
+    ///         submit. `isTrustedReader` answers "may this reader submit for
+    ///         this prosumer?".
+    mapping(address => address) public authorizedReaderFor;
+
+    // ------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event ProsumerRegistered(address indexed prosumer, string subsidyID, string location);
     event ProsumerApproved(address indexed prosumer);
-    event EnergyLogged(address indexed prosumer, uint256 kWh, uint256 timestamp);
+    event EnergyLogged(address indexed prosumer, address indexed reader, uint256 kWh, uint256 timestamp);
     event TrustScoreUpdated(address indexed prosumer, uint256 newScore);
     event EnergyListed(uint256 indexed listingId, address indexed seller, uint256 kWh, uint256 price);
     event ListingCancelled(uint256 indexed listingId);
@@ -75,11 +86,51 @@ contract SolarSettle {
         _;
     }
 
+    modifier whenNotPaused() {
+        require(!paused, "Contract paused");
+        _;
+    }
+
     modifier nonReentrant() {
         require(!_locked, "Reentrant call");
         _locked = true;
         _;
         _locked = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Trusted-reader helpers
+    // ------------------------------------------------------------------
+    /// @notice The reader given by the owner or a registered prosumer. An
+    ///         empty mapping means "no trusted reader registered for this
+    ///         prosumer" — the contract still allows the prosumer's own wallet
+    ///         to submit (self-submission) until a reader is set.
+    /// @return The authorized reader for `prosumer`, or address(0).
+    function isTrustedReader(address prosumer, address reader) public view returns (bool) {
+        // The owner is trusted for every prosumer.
+        if (reader == owner) return true;
+        // A specific reader registered for this prosumer is trusted.
+        if (authorizedReaderFor[prosumer] == reader) return true;
+        // Until a reader is registered, the prosumer's own wallet may submit
+        // (demos / onboarding). Once a reader is set, only it may submit.
+        return prosumers[prosumer].registered == false && reader == prosumer;
+    }
+
+    function setAuthorizedReader(address prosumer, address reader) external onlyOwner {
+        require(prosumers[prosumer].registered, "Prosumer not registered");
+        require(reader != address(0), "Reader cannot be zero");
+        authorizedReaderFor[prosumer] = reader;
+    }
+
+    // ------------------------------------------------------------------
+    // Pause (emergency stop) — owner only.
+    // ------------------------------------------------------------------
+    function pause() external onlyOwner {
+        paused = true;
+    }
+
+    function unpause() external onlyOwner {
+        paused = false;
     }
 
     constructor() {
