@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useWeb3 } from '../../context/Web3Context';
-import Navbar from '../../components/Navbar';
 import TiltCard from '../../components/TiltCard';
 import useTx from '../../hooks/useTx';
 import indiaMap from '@svg-maps/india';
 import { PROVIDERS } from './BuyerDashboard';
+import { sendAlertEmail } from '../../lib/alertMailer';
+import './BuyerDashboard.css';
 import './DashboardTheme.css';
 
 const INACTIVITY_WINDOW_DAYS = 7;
@@ -102,7 +104,7 @@ function getGridTimeline(range, selectedState) {
 }
 
 export default function GovtDashboard() {
-  const { isWalletConnected, account, contract, connectWallet, connecting } = useWeb3();
+  const { isWalletConnected, account, contract, connectWallet, connecting, logout } = useWeb3();
   const { pending, toast, run, setToast } = useTx();
   const [stats, setStats] = useState(null);
   const [pendingList, setPendingList] = useState([]);
@@ -115,6 +117,7 @@ export default function GovtDashboard() {
   const [timeRange, setTimeRange] = useState('7d');
   const [mapZoomed, setMapZoomed] = useState(false);
   const [loadingLiveData, setLoadingLiveData] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
 
   const load = useCallback(async () => {
     if (!contract) {
@@ -222,7 +225,7 @@ export default function GovtDashboard() {
     ? Math.round(filteredProsumers.reduce((sum, p) => sum + p.trustScore, 0) / filteredProsumers.length)
     : 0;
   const gridTimeline = useMemo(() => getGridTimeline(timeRange, selectedState), [timeRange, selectedState]);
-  const alertItems = useMemo(() => buildAlerts(filteredProsumers), [filteredProsumers]);
+  const alertItems = useMemo(() => buildAlerts(filteredProsumers, demoMode ? 'simulation' : 'monitoring'), [filteredProsumers, demoMode]);
   const mapConnections = useMemo(() => [
     ...PROVIDERS.map((provider) => ({
       address: `buyer-grid-${provider.id}`, subsidyID: provider.name, location: `${provider.city}, ${provider.stateName}`,
@@ -241,9 +244,21 @@ export default function GovtDashboard() {
   ], [displayProsumers, pendingList]);
 
   return (
-    <div className="App buyer-theme">
-      <Navbar links={[{ label: 'Marketplace', to: '/buyer' }]} />
-      <div className="dashboard">
+    <div id="solarsettle-govt-dashboard" className="ss-app buyer-theme govt-shell">
+      <aside className="ss-sidebar">
+        <Link to="/" className="ss-brand" style={{ textDecoration: 'none', color: 'inherit' }}><div className="ss-brand-mark">☀</div><div><strong>SolarSettle</strong><span>Clean energy. Trusted together.</span></div></Link>
+        <nav className="ss-nav" aria-label="Government navigation">
+          <button className={'ss-nav-item ' + (activeTab === 'overview' ? 'active' : '')} onClick={() => setActiveTab('overview')}><span className="ss-nav-icon">⌂</span>Overview</button>
+          <button className={'ss-nav-item ' + (activeTab === 'monitoring' ? 'active' : '')} onClick={() => setActiveTab('monitoring')}><span className="ss-nav-icon">◉</span>Monitoring</button>
+          <button className={'ss-nav-item ' + (activeTab === 'registry' ? 'active' : '')} onClick={() => setActiveTab('registry')}><span className="ss-nav-icon">▤</span>Registry</button>
+          <Link className="ss-nav-item" to="/buyer"><span className="ss-nav-icon">↗</span>Marketplace</Link>
+        </nav>
+        <div className="ss-sidebar-help"><span>Need help?</span><button type="button">Government support</button></div>
+        <button className="ss-logout" onClick={logout}>↪ Log Out</button>
+      </aside>
+      <main className="ss-main">
+        <header className="ss-header"><div className="ss-search"><span>⌕</span><input aria-label="Search monitored accounts" placeholder="Search wallets, subsidy IDs, locations..." /></div><div className="ss-header-actions"><button className="ss-icon-button" aria-label="Alerts">●</button><button className="ss-avatar" aria-label="Government profile">GV</button></div></header>
+        <div className="ss-content"><div className="dashboard govt-dashboard">
         <h2>🏛️ Government Dashboard</h2>
         <p className="dashboard-sub">Role: Government. {isWalletConnected ? ('Connected: ' + short(account)) : 'Presentation preview with sample registry data.'}</p>
 
@@ -274,6 +289,11 @@ export default function GovtDashboard() {
           <div className="range-control" aria-label="Timeline range">{RANGE_OPTIONS.map((option) => <button key={option.id} className={timeRange === option.id ? 'active' : ''} onClick={() => setTimeRange(option.id)}>{option.label}</button>)}</div>
         </section>
 
+        <nav className="govt-tabs" aria-label="Government dashboard sections">
+          {[['overview', 'Overview'], ['monitoring', 'Monitoring'], ['registry', 'Registry']].map(([id, label]) => <button key={id} className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)}>{label}</button>)}
+        </nav>
+
+        {activeTab === 'overview' && <>
         <GridHealthTimeline data={gridTimeline} range={timeRange} selectedState={selectedState} />
 
         <AlertCenter alerts={alertItems} selectedState={selectedState} />
@@ -306,8 +326,9 @@ export default function GovtDashboard() {
             <p>{demoCase.evidence}. Detected at {demoCase.detectedAt}.</p>
           </div>
         )}
+        </>}
 
-        <IndiaConnectionMap
+        {activeTab === 'monitoring' && <IndiaConnectionMap
           connections={mapConnections}
           selectedId={selectedMapId}
           zoomed={mapZoomed}
@@ -319,11 +340,13 @@ export default function GovtDashboard() {
             setSelectedMapId(row.address);
             setMapZoomed(true);
             if (prosumers.some((item) => item.address === row.address)) {
-              document.getElementById(`prosumer-${row.address}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              setActiveTab('registry');
+              setTimeout(() => document.getElementById(`prosumer-${row.address}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
             }
           }}
-        />
+        />}
 
+        {activeTab === 'registry' && <>
         <h3 className="section-label" style={{ marginTop: 30 }}>📝 Registration approvals</h3>
         {!contract ? <p className="dashboard-sub">Connect a wallet to view approvals.</p> : filteredPending.length === 0 ? <p className="dashboard-sub">No pending registrations in this scope.</p> : (
           <div className="table-wrap"><table className="data-table"><thead><tr><th>Wallet</th><th>Subsidy ID</th><th>Location</th><th>Capacity</th><th></th></tr></thead><tbody>
@@ -339,8 +362,9 @@ export default function GovtDashboard() {
             ))}
           </tbody></table></div>
         )}
-      </div>
-      {toast && <div className="tx-toast">{toast.text}</div>}
+        </>}
+        </div>{toast && <div className="tx-toast">{toast.text}</div>}</div>
+      </main>
     </div>
   );
 }
@@ -403,16 +427,26 @@ function IndiaConnectionMap({ connections, selectedId, zoomed, onSelect, liveMod
   );
 }
 
-function buildAlerts(rows) {
+function buildAlerts(rows, source = 'monitoring') {
   const alerts = [];
   const subsidyCounts = rows.reduce((counts, row) => ({ ...counts, [row.subsidyID]: (counts[row.subsidyID] || 0) + 1 }), {});
-  rows.forEach((row) => {
-    if (row.daysSilent > INACTIVITY_WINDOW_DAYS) alerts.push({ tone: 'red', title: 'Meter inactivity', detail: `${row.location}: no reading for ${row.daysSilent} days`, subject: row.subsidyID });
-    if (row.trustScore < 40) alerts.push({ tone: 'red', title: 'Low trust score', detail: `${row.location}: trust is ${row.trustScore}/100`, subject: row.subsidyID });
-    if (row.riskReason?.includes('Claimed')) alerts.push({ tone: 'red', title: 'Unusual output', detail: `${row.location}: ${row.riskReason}`, subject: row.subsidyID });
-    if (subsidyCounts[row.subsidyID] > 1) alerts.push({ tone: 'amber', title: 'Duplicate registration', detail: `${row.location}: subsidy ID is attached to multiple wallets`, subject: row.subsidyID });
+  const statisticsFor = (row) => ({
+    Wallet: row.address || 'Not available',
+    Location: row.location || 'Not available',
+    'Subsidy ID': row.subsidyID || 'Not available',
+    'Panel capacity': row.capacityKw ? `${row.capacityKw} kW` : 'Not available',
+    'Trust score': row.trustScore !== undefined ? `${row.trustScore}/100` : 'Not available',
+    'Lifetime generation': row.generated !== undefined ? `${row.generated} kWh` : 'Not available',
+    'Meter silence': row.daysSilent !== undefined ? `${row.daysSilent} days` : 'Not available',
+    'Risk signal': row.riskReason || getRiskReason(row),
   });
-  if (!alerts.length) alerts.push({ tone: 'green', title: 'Grid operating normally', detail: 'No active meter, output, trust, or registration alerts in this scope.', subject: 'Healthy scope' });
+  rows.forEach((row) => {
+    if (row.daysSilent > INACTIVITY_WINDOW_DAYS) alerts.push({ tone: 'red', title: 'Meter inactivity', detail: `${row.location}: no reading for ${row.daysSilent} days`, subject: row.subsidyID, source, stats: statisticsFor(row) });
+    if (row.trustScore < 40) alerts.push({ tone: 'red', title: 'Low trust score', detail: `${row.location}: trust is ${row.trustScore}/100`, subject: row.subsidyID, source, stats: statisticsFor(row) });
+    if (row.riskReason?.includes('Claimed')) alerts.push({ tone: 'red', title: 'Unusual output', detail: `${row.location}: ${row.riskReason}`, subject: row.subsidyID, source, stats: statisticsFor(row) });
+    if (subsidyCounts[row.subsidyID] > 1) alerts.push({ tone: 'amber', title: 'Duplicate registration', detail: `${row.location}: subsidy ID is attached to multiple wallets`, subject: row.subsidyID, source, stats: { ...statisticsFor(row), 'Wallets sharing subsidy': String(subsidyCounts[row.subsidyID]) } });
+  });
+  if (!alerts.length) alerts.push({ tone: 'green', title: 'Grid operating normally', detail: 'No active meter, output, trust, or registration alerts in this scope.', subject: 'Healthy scope', source });
   return alerts;
 }
 
@@ -437,5 +471,23 @@ function GridTrack({ provider, points }) {
 }
 
 function AlertCenter({ alerts, selectedState }) {
-  return <section className="alert-center"><div className="panel-heading"><div><p className="eyebrow">Action queue</p><h3>Alert center</h3><p>{selectedState || 'All India'} · live risk signals and registry checks</p></div><span className="alert-count">{alerts.length} active</span></div><div className="alert-grid">{alerts.map((alert, index) => <article className={`alert-card ${alert.tone}`} key={`${alert.subject}-${alert.title}-${index}`}><span>{alert.tone === 'red' ? 'Action needed' : alert.tone === 'amber' ? 'Review' : 'Healthy'}</span><strong>{alert.title}</strong><p>{alert.detail}</p><small>{alert.subject}</small></article>)}</div></section>;
+  const [delivery, setDelivery] = useState('');
+  useEffect(() => {
+    const scope = selectedState || 'All India';
+    const critical = alerts.filter((alert) => alert.tone === 'red');
+    if (!critical.length) { setDelivery('No critical alerts require automatic delivery.'); return; }
+    const unsent = critical.filter((alert) => {
+      const key = `solarsettle.alert.sent.${alert.source}.${alert.subject}.${alert.title}.${alert.detail}`;
+      try { return !window.sessionStorage.getItem(key); } catch { return true; }
+    });
+    if (!unsent.length) { setDelivery('Critical alerts already delivered recently.'); return; }
+    setDelivery(`Automatically sending ${unsent.length} critical alert${unsent.length > 1 ? 's' : ''}…`);
+    Promise.all(unsent.map(async (alert) => {
+      await sendAlertEmail(alert, scope);
+      const key = `solarsettle.alert.sent.${alert.source}.${alert.subject}.${alert.title}.${alert.detail}`;
+      try { window.sessionStorage.setItem(key, String(Date.now())); } catch { /* Deduplication is best-effort. */ }
+    })).then(() => setDelivery(`Automatically queued ${unsent.length} critical alert${unsent.length > 1 ? 's' : ''}.`))
+      .catch((error) => setDelivery(`Automatic delivery needs SMTP setup: ${error.message}`));
+  }, [alerts, selectedState]);
+  return <section className="alert-center"><div className="panel-heading"><div><p className="eyebrow">Automatic alerting</p><h3>Alert center</h3><p>{selectedState || 'All India'} · critical alerts are queued automatically</p></div><span className="alert-count">{alerts.length} active</span></div><div className="alert-grid">{alerts.map((alert, index) => <article className={`alert-card ${alert.tone}`} key={`${alert.subject}-${alert.title}-${index}`}><span>{alert.tone === 'red' ? 'Automatically queued' : alert.tone === 'amber' ? 'Review' : 'Healthy'}</span><strong>{alert.title}</strong><p>{alert.detail}</p><small>{alert.subject}</small></article>)}</div>{delivery && <p className="mail-status" role="status">{delivery}</p>}</section>;
 }

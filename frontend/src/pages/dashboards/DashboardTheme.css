@@ -147,6 +147,10 @@
   box-shadow: var(--ss-shadow);
 }
 .buyer-theme .govt-controls { display: flex; align-items: center; gap: 14px; }
+.buyer-theme .govt-tabs { display: inline-flex; gap: 4px; margin: 2px 0 0; padding: 5px; border: 1px solid var(--ss-border); border-radius: 12px; background: var(--ss-surface); box-shadow: var(--ss-shadow); }
+.buyer-theme .govt-tabs button { padding: 9px 14px; border: 0; border-radius: 8px; color: var(--ss-muted); background: transparent; cursor: pointer; font: inherit; font-size: 13px; font-weight: 800; }
+.buyer-theme .govt-tabs button:hover { color: var(--ss-primary); background: var(--ss-blue-soft); }
+.buyer-theme .govt-tabs button.active { color: #fff; background: var(--ss-primary); }
 .buyer-theme .govt-controls strong { display: block; font-size: 16px; }
 .buyer-theme .control-label { display: block; margin-bottom: 3px; color: var(--ss-muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .buyer-theme .scope-reset,
@@ -189,6 +193,9 @@
 .buyer-theme .alert-card strong { display: block; color: var(--ss-text); }
 .buyer-theme .alert-card p { min-height: 36px; margin: 7px 0; color: var(--ss-muted); font-size: 12px; line-height: 1.4; }
 .buyer-theme .alert-card small { color: var(--ss-muted); font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.buyer-theme .alert-card button { margin-top: 12px; padding: 7px 10px; border: 0; border-radius: 8px; color: #fff; background: var(--ss-primary); cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
+.buyer-theme .alert-card button:hover { background: var(--ss-primary-dark); }
+.buyer-theme .mail-status { margin: 14px 0 0; color: var(--ss-muted); font-size: 13px; }
 .buyer-theme .alert-card.red { border-left-color: var(--ss-red); background: #fef2f2; }
 .buyer-theme .alert-card.red > span { color: var(--ss-red); }
 .buyer-theme .alert-card.amber { border-left-color: var(--ss-orange); background: #fff7ed; }

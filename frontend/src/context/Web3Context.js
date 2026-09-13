@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { ethers } from 'ethers';
 import abiJson from '../SolarSettleABI.json';
 import { CONTRACT_ADDRESS, CONTRACT_CHAIN_ID, getChain, isContractConfigured } from '../config';
+import { notifyAlert } from '../lib/alertMailer';
 
 const CONTRACT_ABI = abiJson.abi;
 const ROLE_STORAGE_KEY = 'solarsettle.role';
@@ -107,7 +108,15 @@ export function Web3Provider({ children }) {
     setError('');
     try {
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      return await bindWallet(accounts);
+      const wallet = await bindWallet(accounts);
+      if (wallet) {
+        notifyAlert({
+          tone: 'green', title: 'MetaMask wallet connected',
+          detail: `Wallet ${wallet.address} connected to SolarSettle.`, subject: wallet.address,
+          stats: { Wallet: wallet.address, 'Contract chain ID': String(CONTRACT_CHAIN_ID), 'Contract address': CONTRACT_ADDRESS }, source: 'metamask',
+        }, 'Wallet access');
+      }
+      return wallet;
     } catch (e) {
       setError(e.code === 4001 ? 'Connection rejected in MetaMask.' : 'Connect failed: ' + (e.shortMessage || e.message));
       return null;
@@ -161,6 +170,7 @@ export function Web3Provider({ children }) {
       setReadProvider(null);
       setChainId(null);
       setError('Network changed. Reconnect MetaMask to continue.');
+      notifyAlert({ tone: 'amber', title: 'MetaMask network changed', detail: 'Reconnect MetaMask before submitting another SolarSettle transaction.', subject: 'Wallet network', source: 'metamask' }, 'Wallet access');
     };
 
     window.ethereum.on?.('accountsChanged', onAccountsChanged);

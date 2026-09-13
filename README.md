@@ -149,6 +149,18 @@ Add a new network there and run `npm run deploy:<name>`.
 | `cd frontend && npm run build` | Production bundle |
 | `cd frontend && npm test` | Run React tests |
 
+### SMTP alerts
+
+Copy `.env.example` to `.env`, set the SMTP credentials and `ALERT_RECIPIENTS`, then run this alongside the frontend:
+
+```bash
+npm run alerts:server
+```
+
+The mailer receives no SMTP credential from the browser. It sends SMTP alerts for government monitoring signals (including simulated fraud data), simulated prosumer actions, MetaMask connection/network changes, and confirmed, rejected, or failed MetaMask transactions. Email delivery is best-effort and never delays a transaction or simulation.
+
+To see the SMTP formatting without configuring a mailbox, run `npm.cmd run alerts:demo`. It uses an ephemeral Ethereal SMTP account and prints preview URLs for one simulated-meter alert and one MetaMask settlement alert.
+
 ---
 
 ## Key design decisions

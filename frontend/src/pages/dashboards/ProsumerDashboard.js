@@ -6,6 +6,7 @@ import useTx from '../../hooks/useTx';
 import './BuyerDashboard.css';
 import './ProsumerDashboard.css';
 import { generateReading } from '../../lib/meterSimulator';
+import { notifySimulationAlert } from '../../lib/alertMailer';
 
 const DEMO_PROFILE = {
   subsidyID: 'PM-KUSUM-2025-031', panelCapacity: 8000, location: 'Ujjain, MP',
@@ -85,6 +86,7 @@ export default function ProsumerDashboard() {
       const kwh = Math.round(liveReading.kWh);
       setProfile((c) => ({ ...c, totalEnergyGenerated: c.totalEnergyGenerated + kwh, carbonCredits: c.carbonCredits + kwh, trustScore: Math.min(100, c.trustScore + 2) }));
       setToast({ kind: 'ok', text: 'Demo meter reading logged - profile totals updated.' });
+      notifySimulationAlert({ title: 'Simulated meter reading recorded', detail: `${kwh} kWh was added to the Ujjain demo prosumer profile.`, subject: DEMO_PROFILE.subsidyID, stats: { Location: DEMO_PROFILE.location, 'Reading added': `${kwh} kWh`, 'Total generated': `${profile.totalEnergyGenerated + kwh} kWh`, 'Trust score': `${Math.min(100, profile.trustScore + 2)}/100`, 'Carbon credits': String(profile.carbonCredits + kwh) } });
       return;
     }
     const kwh = Math.max(1, Math.round(liveReading.kWh));
@@ -94,7 +96,12 @@ export default function ProsumerDashboard() {
 
   const handleList = async (e) => {
     e.preventDefault();
-    if (demoMode) { setToast({ kind: 'ok', text: 'Demo surplus listing created.' }); setListForm({ kwh: '', price: '' }); return; }
+    if (demoMode) {
+      setToast({ kind: 'ok', text: 'Demo surplus listing created.' });
+      notifySimulationAlert({ title: 'Simulated energy listing created', detail: `${listForm.kwh || 'New'} kWh of demo surplus was listed for the marketplace.`, subject: DEMO_PROFILE.subsidyID });
+      setListForm({ kwh: '', price: '' });
+      return;
+    }
     const kwh = parseInt(listForm.kwh, 10);
     if (!kwh || !listForm.price) return;
     const ok = await run(() => contract.listEnergy(kwh, ethers.parseEther(listForm.price)), 'Energy listed on the marketplace.');
@@ -102,7 +109,12 @@ export default function ProsumerDashboard() {
   };
 
   const handleCancel = async (listing) => {
-    if (demoMode) { setMyListings((cur) => cur.filter((l) => l.id !== listing.id)); setToast({ kind: 'ok', text: 'Demo listing #' + listing.id + ' removed.' }); return; }
+    if (demoMode) {
+      setMyListings((cur) => cur.filter((l) => l.id !== listing.id));
+      setToast({ kind: 'ok', text: 'Demo listing #' + listing.id + ' removed.' });
+      notifySimulationAlert({ title: 'Simulated energy listing cancelled', detail: `Demo listing #${listing.id} was removed from the marketplace.`, subject: DEMO_PROFILE.subsidyID });
+      return;
+    }
     const ok = await run(() => contract.cancelListing(listing.id), 'Listing #' + listing.id + ' cancelled.');
     if (ok) await loadProfile();
   };
