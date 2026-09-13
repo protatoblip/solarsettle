@@ -106,6 +106,13 @@ function getGridTimeline(range, selectedState) {
 export default function GovtDashboard() {
   const { isWalletConnected, account, contract, connectWallet, connecting, logout } = useWeb3();
   const { pending, toast, run, setToast } = useTx();
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      return window.localStorage.getItem('solarsettle-govt-theme') === 'dark';
+    } catch {
+      return false;
+    }
+  });
   const [stats, setStats] = useState(null);
   const [pendingList, setPendingList] = useState([]);
   const [prosumers, setProsumers] = useState([]);
@@ -118,6 +125,18 @@ export default function GovtDashboard() {
   const [mapZoomed, setMapZoomed] = useState(false);
   const [loadingLiveData, setLoadingLiveData] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+
+  const toggleDarkMode = () => {
+    setDarkMode((enabled) => {
+      const next = !enabled;
+      try {
+        window.localStorage.setItem('solarsettle-govt-theme', next ? 'dark' : 'light');
+      } catch {
+        // The visual preference still works when browser storage is unavailable.
+      }
+      return next;
+    });
+  };
 
   const load = useCallback(async () => {
     if (!contract) {
@@ -244,7 +263,7 @@ export default function GovtDashboard() {
   ], [displayProsumers, pendingList]);
 
   return (
-    <div id="solarsettle-govt-dashboard" className="ss-app buyer-theme govt-shell">
+    <div id="solarsettle-govt-dashboard" className={'ss-app buyer-theme govt-shell' + (darkMode ? ' dark' : '')}>
       <aside className="ss-sidebar">
         <Link to="/" className="ss-brand" style={{ textDecoration: 'none', color: 'inherit' }}><div className="ss-brand-mark">☀</div><div><strong>SolarSettle</strong><span>Clean energy. Trusted together.</span></div></Link>
         <nav className="ss-nav" aria-label="Government navigation">
@@ -259,6 +278,11 @@ export default function GovtDashboard() {
       <main className="ss-main">
         <header className="ss-header"><div className="ss-search"><span>⌕</span><input aria-label="Search monitored accounts" placeholder="Search wallets, subsidy IDs, locations..." /></div><div className="ss-header-actions"><button className="ss-icon-button" aria-label="Alerts">●</button><button className="ss-avatar" aria-label="Government profile">GV</button></div></header>
         <div className="ss-content"><div className="dashboard govt-dashboard">
+        <div className="govt-theme-control">
+          <button className="govt-theme-toggle" type="button" onClick={toggleDarkMode} aria-pressed={darkMode}>
+            {darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          </button>
+        </div>
         <h2>🏛️ Government Dashboard</h2>
         <p className="dashboard-sub">Role: Government. {isWalletConnected ? ('Connected: ' + short(account)) : 'Presentation preview with sample registry data.'}</p>
 

@@ -30,111 +30,34 @@ export function Web3Provider({ children }) {
   const [contract, setContract] = useState(null);
   const [readProvider, setReadProvider] = useState(null);
   const [chainId, setChainId] = useState(null);
-  const [chainMismatch, setChainMismatch] = useState(false);
-  const [currentChainName, setCurrentChainName] = useState(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState('');
   const configured = isContractConfigured();
   const walletAvailable = typeof window !== 'undefined' && !!window.ethereum;
 
-  // ------------------------------------------------------------------
-  // Network awareness
-  // ------------------------------------------------------------------
-  /** True when MetaMask's connected chain differs from the chain the
-   *  contract was deployed to. Drives the network-warning banners. */
-  const networkMatches = () => !chainMismatch;
-
-  /** The contract was deployed to this chainId. A wallet on a different
-   *  chain produces a mismatch warning everywhere. */
-  const deployedChainName = () => {
+  const switchNetwork = async () => {
     const chain = getChain(CONTRACT_CHAIN_ID);
-    return chain?.chainName || ('Chain ' + CONTRACT_CHAIN_ID);
-  };
+    if (!chain) throw new Error('No chain metadata for chainId ' + CONTRACT_CHAIN_ID);
 
-  // ------------------------------------------------------------------
-  // Role resolution helpers
-  // ------------------------------------------------------------------
-  /** True when the connected wallet is the contract owner (government). */
-  const isOwner = () => account != null && contract != null && account.toLowerCase() === contract.signer.address.toLowerCase();
-
-  /** True when the connected wallet is a registered prosumer. */
-  const isRegisteredProsumer = async () => {
-    if (!account || !contract) return false;
     try {
-      return (await contract.prosumers(account)).registered;
-    } catch {
-      return false;
-    }
-  };
-
-  /** True when a wallet is connected and the role matches the connected
-   *  wallet's authority (govt → owner, prosumer → registered). */
-  const roleAuthorityMatches = async () => {
-    if (!account || !contract) return false;
-    if (selectedRole === 'government') return isOwner();
-    if (selectedRole === 'prosumer' || selectedRole === 'pending-prosumer') {
-      try { return (await contract.prosumers(account)).registered || (await contract.prosumers(account)).pendingApproval; }
-      catch { return false; }
-    }
-    return true; // buyer has no wallet authority requirement
-  };
-
-  // ------------------------------------------------------------------
-  // Wallet connect / disconnect
-  // ------------------------------------------------------------------
-  const connectWallet = useCallback(async () => {
-    if (!walletAvailable) { setError('MetaMask not detected'); return false; }
-    setConnecting(true); setError('');
-    try {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      const acct = accounts[0];
-      const prov = new ethers.BrowserProvider(window.ethereum);
-      setAccount(acct);
-
-      // Detect the currently connected chain and report mismatch.
-      const currentChainIdHex = await window.ethereum.request({ method: 'eth_chainId' });
-      const curId = parseInt(currentChainIdHex, 16);
-      setChainId(curId);
-      const chain = getChain(curId);
-      setCurrentChainName(chain?.chainName || 'Unknown chain (' + curId + ')');
-      setChainMismatch(curId !== CONTRACT_CHAIN_ID);
-
-      // Injected provider throws if the wallet is on a chain the ABIs
-      // don't cover; keep read fallback safe.
-      try {
-        const signerContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, prov.getSigner());
-        setContract(signerContract);
-      } catch (ce) {
-        setError('Wallet connected — but contract call failed on this chain.');
-        setContract(null);
-      }
-
-      // Read-only provider always from the deployed chain's RPC.
-      const rpc = getChain(CONTRACT_CHAIN_ID);
-      setReadProvider(new ethers.JsonRpcProvider(rpc?.rpcUrls?.[0]));
-
-      return true;
-    } catch (e) {
-      if (e?.code === 4001) { setError('Wallet connection cancelled'); }
-      else { setError('Could not connect wallet: ' + (e?.message || e)); }
-      return false;
-    } finally {
-      setConnecting(false);
-    }
-  }, [walletAvailable]);
-
-  const logout = useCallback(() => {
-    setAccount(null);
-    setContract(null);
-    setReadProvider(null);
-    setChainId(null);
-    setChainMismatch(false);
-    setCurrentChainName(null);
-    setSelectedRole(null);
-    try { window.localStorage.removeItem(ROLE_STORAGE_KEY); } catch {}
-  }, []);
-
-  // ... rest handled by effect below
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: chain.chainIdHex }],
+      });
+    } catch (switchErr) {
+      if (switchErr.code === 4902 || switchErr.data?.originalError?.code === 4902) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: chain.chainIdHex,
+            chainName: chain.chainName,
+            nativeCurrency: chain.nativeCurrency,
+            rpcUrls: chain.rpcUrls,
+            blockExplorerUrls: chain.blockExplorerUrls,
+          }],
+        });
+      } else {
+        throw switchErr;
       }
     }
   };
